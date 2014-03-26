@@ -13,6 +13,7 @@
 #include <boost/format.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
+
 #include <boost/asio.hpp>
 #include <cql/cql.hpp>
 #include <cql/cql_connection.hpp>
@@ -23,6 +24,9 @@
     
 using namespace cql;
 using boost::shared_ptr;
+
+typedef GoogMap<Hash256, uint32_t, Hash256Hasher, Hash256Equal>::Map TXTimeMap;
+static uint8_t empty[kSHA256ByteSize] = { 0x42 };
     
 void
 print_rows(
@@ -81,6 +85,7 @@ struct CassandraSync:public Callback
     uint64_t blockFee;
     uint32_t bits;
     uint32_t nonce;
+    uint32_t txTime;
     const uint8_t *prevBlkHash;
     const uint8_t *blkMerkleRoot;
     time_t time;
@@ -96,6 +101,7 @@ struct CassandraSync:public Callback
     uint128_t totalReceived;
     uint64_t block_sent;
     uint64_t block_received;
+    double stakeAge; //age of stake transaction in days
 
     int block_inserts;
     int block_existing;
@@ -111,6 +117,11 @@ struct CassandraSync:public Callback
     shared_ptr<cql::cql_session_t> session; 
     boost::shared_future<cql::cql_future_result_t> future;
     shared_ptr<cql::cql_builder_t> builder;
+
+    TXTimeMap gTXTimeMap;
+
+
+    uint8_t *blockHash;
 
     CassandraSync()
     {
@@ -315,6 +326,7 @@ struct CassandraSync:public Callback
        "CREATE TABLE IF NOT EXISTS blocks ("
             "id int,"
             "chain int,"
+            "stakeage float,"
             "POS boolean,"
             "hash varchar,"
             "hashPrevBlock varchar,"
@@ -384,12 +396,14 @@ struct CassandraSync:public Callback
        std::string POS = proofOfStake ? "true" : "false";
        uint8_t *strprevBlkHash = allocHash256(); 
        uint8_t *strblkMerkleRoot = allocHash256();
+       uint8_t *strblockHash = allocHash256();
        toHex(strprevBlkHash,prevBlkHash);
        toHex(strblkMerkleRoot,blkMerkleRoot);
+       toHex(strblockHash, blockHash);
        uint64_t msTime = time*1000;
        std::string query = str(boost::format(
-       "INSERT INTO blocks (id,chain,pos,hash,hashprevblock,hashmerkleroot,time,bits,diff,nonce,txcount,reward,staked,sent,received,destroyed) "
-       "VALUES (%d,0,%s,'SEE NEXT BLOCK','%s','%s',%d,'%x',%f,%u,%d,%d,%d,%d,%d,%d)") % (int)currBlock % POS % strprevBlkHash % strblkMerkleRoot % msTime % bits %
+       "INSERT INTO blocks (id,chain,stakeage,pos,hash,hashprevblock,hashmerkleroot,time,bits,diff,nonce,txcount,reward,staked,sent,received,destroyed) "
+       "VALUES (%d,0,%f,%s,'%s','%s','%s',%d,'%x',%f,%u,%d,%d,%d,%d,%d,%d)") % (int)currBlock % stakeAge % POS % strblockHash % strprevBlkHash % strblkMerkleRoot % msTime % bits %
             diff(bits) % nonce % blkTxCount % baseReward % inputValue % block_sent % block_received % blockFee);
        if(verbose) {
             printf("%s\n",query.c_str());
@@ -423,6 +437,9 @@ struct CassandraSync:public Callback
         bool cassandra_log = values.get("cassandra_log");
         drop = values.get("drop");
         verbose = values.get("verbose");
+
+        gTXTimeMap.setEmptyKey(empty);
+        gTXTimeMap.resize(15*1000*1000);
 
         info("connecting to %s@%s:%d in keyspace %s",username.c_str(),hostname.c_str(),port,keyspace.c_str());
         cql_initialize();
@@ -461,9 +478,9 @@ struct CassandraSync:public Callback
             if(create_block_table() && verbose) {
                 info("successfully created/did not delete block table");
             }
-            if(create_tx_table() && verbose) {
-                info("successfully created/did not delete block table");
-            }
+            //if(create_tx_table() && verbose) {
+            //    info("successfully created/did not delete tx table");
+            //}
             if(exists) {
                 database_block_count = get_block_count();
                 info("found %lld existing blocks",database_block_count);
@@ -497,6 +514,8 @@ struct CassandraSync:public Callback
     )
     {
         const uint8_t *p = b->data;
+        blockHash = allocHash256();
+        sha256Twice(blockHash, p, 80); 
         SKIP(uint32_t, version, p);
         prevBlkHash = p;
         SKIP(uint256_t, prevhash, p);
@@ -534,6 +553,9 @@ struct CassandraSync:public Callback
         currTXHash = hash;
         txCount++;
         SKIP(uint32_t, version, p);
+        LOAD(uint32_t, ntime, p);
+        txTime = ntime;
+        gTXTimeMap[hash] = ntime;
     }
 
     virtual void  startInputs(const uint8_t *p)
@@ -571,6 +593,7 @@ struct CassandraSync:public Callback
 
         if(proofOfStake && txCount == 2) {
             inputValue += value;
+            stakeAge = (txTime - gTXTimeMap[upTXHash]) / (float)(60*60*24);
         } else {
             totalSent += value;
             block_sent += value;
@@ -617,19 +640,23 @@ struct CassandraSync:public Callback
                baseReward = stakeEarned;
            POScount++;
            totalStakeEarned += baseReward;
-           if((int)currBlock > 0)
-            totalTrans += txCount - 2;
+           //if((int)currBlock > 0)
+           blkTxCount -= 2;
+           txCount -= 2;
+           totalTrans += txCount;
         } else {
             POWcount++;
             totalMined += baseReward;
-            totalTrans += txCount - 1;
+            blkTxCount -= 1;
+            txCount -= 1;
+            totalTrans += txCount;
         }
         totalFeeDestroyed += blockFee;
         if(!skip) {
              add_block();
              increment_counters();
         }
-        if(((int)currBlock % 10000) == 0)
+        if(((int)currBlock % 5000) == 0)
             info("processed block %d...%d/%d inserts/existing",(int)currBlock,block_inserts,block_existing);
     }
 
