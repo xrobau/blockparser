@@ -180,10 +180,6 @@ struct sqliteSync:public Callback
         return rc;
     }
 /*
-    virtual bool drop_keyspace() {
-        return call_query(str(boost::format("DROP KEYSPACE %1%") % keyspace));
-
-    }
     virtual int64_t get_block_count() {
        shared_ptr<cql::cql_query_t> create_keyspace(new cql::cql_query_t(
        str(boost::format("SELECT value from counters where name = 'blocks';"))));
@@ -234,9 +230,8 @@ struct sqliteSync:public Callback
             errFatal("sql error: %s", zErrMsg);  
         }
         return true;
-    }/*
+    }
     virtual bool increment_counters() {
-       call_query("UPDATE counters SET value = value+1 where name = 'blocks';");
        uint64_t totalSupply = totalMined + totalStakeEarned - totalFeeDestroyed;
        uint64_t msTime = time*1000;
        std::string query = str(boost::format("INSERT INTO stats (time, last_block, destroyed_fees,"
@@ -250,7 +245,7 @@ struct sqliteSync:public Callback
        call_query(query);
        return true;
     }
-    */
+    
     virtual bool create_stats_table() {
         return call_query("CREATE TABLE IF NOT EXISTS stats ("
         " time timestamp,"
@@ -336,10 +331,10 @@ struct sqliteSync:public Callback
 
         
     }
-
+    */
     virtual void add_block() {
 
-       std::string POS = proofOfStake ? "true" : "false";
+       std::string POS = proofOfStake ? "TRUE" : "FALSE";
        uint8_t *strprevBlkHash = allocHash256(); 
        uint8_t *strblkMerkleRoot = allocHash256();
        uint8_t *strblockHash = allocHash256();
@@ -349,21 +344,14 @@ struct sqliteSync:public Callback
        uint64_t msTime = time*1000;
        std::string query = str(boost::format(
        "INSERT INTO blocks (id,chain,stakeage,pos,hash,hashprevblock,hashmerkleroot,time,bits,diff,nonce,txcount,reward,staked,sent,received,destroyed) "
-       "VALUES (%d,0,%f,%s,'%s','%s','%s',%d,'%x',%f,%u,%d,%d,%d,%d,%d,%d)") % (int)currBlock % stakeAge % POS % strblockHash % strprevBlkHash % strblkMerkleRoot % msTime % bits %
+       "VALUES (%d,0,%f,'%s','%s','%s','%s',%d,'%x',%f,%u,%d,%d,%d,%d,%d,%d)") % (int)currBlock % stakeAge % POS % strblockHash % strprevBlkHash % strblkMerkleRoot % msTime % bits %
             diff(bits) % nonce % blkTxCount % baseReward % inputValue % block_sent % block_received % blockFee);
        if(verbose) {
             printf("%s\n",query.c_str());
        }
-       shared_ptr<cql::cql_query_t> add_block(new cql::cql_query_t(query));
-       future = session->query(add_block);
-       future.wait();
-       if(future.get().error.is_err()) {
-           std::cout << boost::format("cql error: %1%") % future.get().error.message << "\n";
-           errFatal("failed to add block %d",(int)currBlock);
-       }
+       call_query(query.c_str());
        block_inserts++;
     }
-*/
     virtual int init(
         int argc,
         const char *argv[]
@@ -431,6 +419,8 @@ struct sqliteSync:public Callback
 
             printf("\n");
             info("starting block insert process");
+            call_query("BEGIN TRANSACTION");
+
 
         }
         catch (std::exception& e)
@@ -448,8 +438,6 @@ struct sqliteSync:public Callback
         totalSent = 0;
         totalReceived = 0;
         
-        sqlite3_close(db); 
-        exit(0); //just for testing
         return 0;
     }
 
@@ -489,6 +477,7 @@ struct sqliteSync:public Callback
         } else 
             skip = false;
         */
+        skip = false; //remove me later when we implement syncing
     }
 
     virtual void startTX(
@@ -598,11 +587,11 @@ struct sqliteSync:public Callback
             totalTrans += txCount;
         }
         totalFeeDestroyed += blockFee;
-        /*if(!skip) {
+        if(!skip) {
              add_block();
              increment_counters();
-        }*/
-        if(((int)currBlock % 5000) == 0)
+        }
+        if(((int)currBlock % 10000) == 0)
             info("processed block %d...%d/%d inserts/existing",(int)currBlock,block_inserts,block_existing);
     }
 
@@ -612,6 +601,7 @@ struct sqliteSync:public Callback
       info("inserted blocks: %d",block_inserts);
       info("existing blocks: %d",block_existing);
       info("total blocks processed: %d",block_inserts+block_existing);
+      call_query("END TRANSACTION");
       sqlite3_close(db);
     }
 };
