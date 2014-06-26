@@ -48,7 +48,7 @@ LIBS =                          \
     -ldl                        \
 	-lboost_system				\
 	-lboost_thread				\
-	-lcql						\
+	-lsqlite3						\
 
 all:parser
 
@@ -143,6 +143,13 @@ all:parser
 #	@${CPLUS} -MD ${INC} ${COPT}  -c cb/cassandra.cpp -o .objs/cassandra.o
 #	@mv .objs/cassandra.d .deps
 
+.objs/sqlite.o : cb/sqlite.cpp
+	@echo c++ -- cb/sqlite.cpp
+	@mkdir -p .deps
+	@mkdir -p .objs
+	@${CPLUS} -MD ${INC} ${COPT}  -c cb/sqlite.cpp -o .objs/sqlite.o
+	@mv .objs/sqlite.d .deps
+
 .objs/opcodes.o : opcodes.cpp
 	@echo c++ -- opcodes.cpp
 	@mkdir -p .deps
@@ -203,6 +210,7 @@ OBJS=                       \
     .objs/transactions.o    \
     .objs/util.o            \
     .objs/dumpTX.o          \
+    .objs/sqlite.o 	    \
     .objs/peerstats.o        
 
 #    .objs/cassandra.o 	    \
