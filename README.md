@@ -43,7 +43,7 @@ blockparser peercoin fork
             make
             ./parser
 
-        . If you are interested in the Cassandra database syncer:
+        . If you are interested in using a database, use sqlite for most cases, however if you are interested in the Cassandra database syncer:
 
             Install the datastax cpp cassandra driver: https://github.com/datastax/cpp-driver
             git clone git://github.com/snakie/blockparser.git
