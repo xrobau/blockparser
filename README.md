@@ -88,6 +88,10 @@ blockparser peercoin fork
 
             ./parser show
 
+        . Load or sync your blockchain into/with a sqlite database ./peerchain.db (needs sqlite3 libraries) 
+
+            ./parser sync (10s)
+
     Caveats:
     --------
 
@@ -132,6 +136,7 @@ blockparser peercoin fork
         . cb/peerstats.cpp      :   code to compute peercon specific simple stats.
         . cb/sql.cpp            :   code to product an SQL dump of the blockchain*
         . cb/cassandra.cpp      :   code to sync block information into a cassandra instance.
+        . cb/sqlite.cpp         :   code to sync block information into a sqlite instance.
         . cb/taint.cpp          :   code to compute the taint from a given TX to all TXs.
         . cb/transactions.cpp   :   code to extract all transactions pertaining to an address.
         
