@@ -6,6 +6,7 @@
 #include <string.h>
 #include <callback.h>
 #include <ctime>
+#include <sys/stat.h>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/format.hpp>
@@ -107,7 +108,7 @@ struct sqliteSync:public Callback
         parser
             .usage("[options]")
             .version("")
-            .description("load/sync the blockchain with a cassandra database")
+            .description("load/sync the blockchain with a sqlite database")
             .epilog("")
         ;
         parser
@@ -129,10 +130,10 @@ struct sqliteSync:public Callback
             .help("verbose")
          ;
         parser
-            .add_option("-i", "--init")
+            .add_option("-d", "--drop")
             .action("store_true")
             .set_default(false)
-            .help("re-init database if it exists")
+            .help("drop database and start over if it exists")
          ;
 
     }
@@ -147,20 +148,13 @@ struct sqliteSync:public Callback
     {
         v.push_back("sync");
     }
-/*
-    virtual bool keyspace_exists(std::string keyspace) {
-        shared_ptr<cql::cql_query_t> get_keyspaces(new cql::cql_query_t("SELECT * FROM system.schema_keyspaces;"));
-        future = session->query(get_keyspaces);
-        future.wait();
-        if(future.get().error.is_err()) {
-            std::cout << boost::format("cql error: %1%") % future.get().error.message << "\n";
-            errFatal("Failed to fetch existing keyspaces");
-        }
-        shared_ptr<cql_result_t> result = future.get().result;
+    virtual bool file_exists(std::string full_path) {
+        //check if path/dbname exists
+        struct stat buffer;
+        return( stat (full_path.c_str(), &buffer) == 0);
         
-        return keyspace_match(keyspace,*future.get().result);
     }
-
+/*
     virtual bool keyspace_match(std::string keyspace,cql::cql_result_t& result) {
 
         while(result.next()) {
@@ -179,9 +173,8 @@ struct sqliteSync:public Callback
 
     }
 */
-    virtual int init_sqlite(std::string path, std::string dbname) {
+    virtual int init_sqlite(std::string full_path) {
         int rc;
-        std::string full_path = path + "/" + dbname;
         rc = sqlite3_open(full_path.c_str(), &db);
 
         return rc;
@@ -223,16 +216,25 @@ struct sqliteSync:public Callback
     virtual bool switch_keyspace() {
        return call_query(str(boost::format("USE %1%;") % keyspace));
      }/
-    virtual bool call_query(std::string query) {
-       shared_ptr<cql::cql_query_t> inc(new cql::cql_query_t(query));
-       future = session->query(inc);
-       future.wait();
-       if(future.get().error.is_err()) {
-           std::cout << boost::format("cql error: %1%") % future.get().error.message << "\n";
-           errFatal("Failed to call query '%s'", query.c_str());
-       }
-       return true;
+     */
+    static int callback(void *NotUsed, int argc, char **argv, char **azColName){
+        int i;
+        for(i=0; i<argc; i++){
+        printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+        }
+        printf("\n");
+        return 0;
     }
+    virtual bool call_query(std::string query) {
+        int rc;
+        char *zErrMsg = 0;
+        rc = sqlite3_exec(db, query.c_str(), callback, 0, &zErrMsg);
+        if( rc != SQLITE_OK ) {
+            info("failed to execute query: %s",query.c_str());
+            errFatal("sql error: %s", zErrMsg);  
+        }
+        return true;
+    }/*
     virtual bool increment_counters() {
        call_query("UPDATE counters SET value = value+1 where name = 'blocks';");
        uint64_t totalSupply = totalMined + totalStakeEarned - totalFeeDestroyed;
@@ -248,13 +250,7 @@ struct sqliteSync:public Callback
        call_query(query);
        return true;
     }
-    virtual bool create_counter_table() {
-       return call_query(
-       "CREATE TABLE IF NOT EXISTS counters ("
-       "  name varchar PRIMARY KEY,"
-       "  value counter) with caching = all;"
-       );
-    }
+    */
     virtual bool create_stats_table() {
         return call_query("CREATE TABLE IF NOT EXISTS stats ("
         " time timestamp,"
@@ -266,10 +262,9 @@ struct sqliteSync:public Callback
         " destroyed_fees bigint,"
         " minted_coins bigint,"
         " mined_coins bigint,"
-        " PRIMARY KEY (last_block)"
+        " PRIMARY KEY (last_block))"
         //" sent bigint,"
         //" received bigint,"
-        ") with caching = 'all';"
         );
 
     }
@@ -294,9 +289,8 @@ struct sqliteSync:public Callback
             "received bigint,"
             "destroyed bigint,"
             "PRIMARY KEY (id,chain))"
-            " with caching = 'all';"
        );
-    }
+    }/*
     //need to make it parse txns
     virtual bool create_tx_table() {
        return false;
@@ -382,60 +376,61 @@ struct sqliteSync:public Callback
         path = values["path"].c_str();
         dbname = values["name"].c_str();
 
-        drop = values.get("init");
+        drop = values.get("drop");
         verbose = values.get("verbose");
 
         gTXTimeMap.setEmptyKey(empty);
         gTXTimeMap.resize(15*1000*1000);
 
-        info("using sqlite database at %s/%s",path.c_str(),dbname.c_str());
+        std::string full_path = path + "/" + dbname;
+
+        info("using sqlite database at %s",full_path.c_str());
 
         try {
-            if(init_sqlite(path,dbname)) {
-                info("connected successfully"); 
-            }
-            /*
-            if(drop) {
-                if(drop_keyspace()) {
-                    info("dropped keyspace %s",keyspace.c_str());
-                }
-            }
-            //print_rows(*future.get().result);
-            bool exists = keyspace_exists(keyspace);
+            bool exists = file_exists(full_path);
             if(exists) {
-                info("keyspace %s already exists",keyspace.c_str());
-                
-            } else {
-                info("keyspace %s does not exist",keyspace.c_str());
-                //create keyspace
-                if(create_keyspace()) {
-                   info("created keyspace %s", keyspace.c_str());
+                info("database already exists");
+                if(drop) {
+                    info("removing the database...");
+                    int deleted = std::remove(full_path.c_str());
+                    if(deleted) {
+                        errFatal("failed to remove existing database");
+                    }
                 }
-                //create block table
+            } else {
+                info("db file does not exist, creating anew");
             }
-            if(switch_keyspace() && verbose) {
-                info("switched successfully to keyspace %s",keyspace.c_str());
+            if(init_sqlite(full_path) == 0) {
+                if(drop) {
+                    info("created db and connected successfully"); 
+                } else 
+                    info("connected successfully"); 
+            } else {
+                errFatal("failed to connect to db");
             }
-            if(!exists) {
-                //create counter tables
-                create_counter_table();
-                create_stats_table();
-            }
-            if(create_block_table() && verbose) {
-                info("successfully created/did not delete block table");
-            }
-            //if(create_tx_table() && verbose) {
-            //    info("successfully created/did not delete tx table");
-            //}
+            if(exists && drop) {
+                //create tables
+                if(create_stats_table()) {
+                    info("sucessfully created stats table");
+                }
+                if(create_block_table()) {
+                    info("successfully created block table");
+                 }
+                //if(create_tx_table() && verbose) {
+                //    info("successfully created/did not delete tx table");
+                //}
+            }/*
             if(exists) {
                 database_block_count = get_block_count();
                 info("found %lld existing blocks",database_block_count);
             } else {
                 database_block_count = 0;
             }
+            */
+            database_block_count = 0; //remove me later
+
             printf("\n");
             info("starting block insert process");
-            */
 
         }
         catch (std::exception& e)
@@ -453,7 +448,7 @@ struct sqliteSync:public Callback
         totalSent = 0;
         totalReceived = 0;
         
-
+        sqlite3_close(db); 
         exit(0); //just for testing
         return 0;
     }
