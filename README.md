@@ -34,7 +34,7 @@ blockparser peercoin fork
             
             If on Ubuntu run:
                 sudo apt-get install libssl-dev build-essential g++-4.4 libboost-all-dev \
-                libsparsehash-dev git-core perl
+                libsparsehash-dev git-core perl libsqlite3-dev
 
         . Run this:
 
