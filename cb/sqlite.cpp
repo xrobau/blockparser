@@ -18,40 +18,8 @@ using boost::shared_ptr;
 
 typedef GoogMap<Hash256, uint32_t, Hash256Hasher, Hash256Equal>::Map TXTimeMap;
 static uint8_t empty[kSHA256ByteSize] = { 0x42 };
+static int64_t database_last_block;
     
-/*
-void
-print_rows(
-    cql::cql_result_t& result)
-{
-    while (result.next()) {
-        for (size_t i = 0; i < result.column_count(); ++i) {
-            cql::cql_byte_t* data = NULL;
-            cql::cql_int_t size = 0;
-
-            result.get_data(i, &data, size);
-
-            std::cout.write(reinterpret_cast<char*>(data), size);
-            for (int i = size; i < 25; i++) {
-                std::cout << ' ' ;
-            }
-            std::cout << " | ";
-        }
-        std::cout << std::endl;
-    }
-}
-*/
-long from_counter(const std::string& value) {
-    union  {
-        long    v;
-        char    cc[8];
-    } xx;
-    for (size_t i=0; i < 8;++i) {
-        xx.cc[7-i]=value.at(i);
-    }
-    return xx.v;
-}
-
 struct sqliteSync:public Callback
 {
     optparse::OptionParser parser;
@@ -92,7 +60,6 @@ struct sqliteSync:public Callback
 
     int block_inserts;
     int block_existing;
-    int64_t database_block_count;
 
     std::string path;
     std::string dbname;
@@ -179,40 +146,24 @@ struct sqliteSync:public Callback
 
         return rc;
     }
-/*
     virtual int64_t get_block_count() {
-       shared_ptr<cql::cql_query_t> create_keyspace(new cql::cql_query_t(
-       str(boost::format("SELECT value from counters where name = 'blocks';"))));
-       future = session->query(create_keyspace);
-       future.wait();
-       if(future.get().error.is_err()) {
-          std::cout << boost::format("cql error: %1%") % future.get().error.message << "\n";
-          errFatal("Failed to query for block count");
+        //value is actually set in callback
+        std::string query = "SELECT MAX(id) from blocks"; 
+        int rc;
+        char *zErrMsg = 0;
+        rc = sqlite3_exec(db, query.c_str(), last_block_callback, 0, &zErrMsg);
+        if( rc != SQLITE_OK ) {
+            info("failed to execute query: %s",query.c_str());
+            errFatal("sql error: %s", zErrMsg);  
         }
-        //print_rows(*future.get().result);
-        shared_ptr<cql::cql_result_t> result_ptr = future.get().result;
-        cql::cql_result_t& result = *result_ptr;
-        if(result.next()) {
-            std::string str_counter; 
-            //counters need to be fetched as strings and converted
-            result.get_string("value",str_counter);
-            int64_t count = from_counter(str_counter);
-            //info("%lld %"PRIu64" %d", count, count, sizeof(int64_t));
-            return count;
-            
-        } 
-
-        errFatal("Unable to fetch recent block count");
         return 0;
 
     }
-    virtual bool create_keyspace() {
-       return call_query(str(boost::format("CREATE KEYSPACE %1% WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };") % keyspace));
+    static int last_block_callback(void *NotUsed, int argc, char **argv, char **azColName){
+        database_last_block = atoi(argv[0]);
+        return 0;
     }
-    virtual bool switch_keyspace() {
-       return call_query(str(boost::format("USE %1%;") % keyspace));
-     }/
-     */
+    //basic query callback
     static int callback(void *NotUsed, int argc, char **argv, char **azColName){
         int i;
         for(i=0; i<argc; i++){
@@ -389,14 +340,14 @@ struct sqliteSync:public Callback
                 info("db file does not exist, creating anew");
             }
             if(init_sqlite(full_path) == 0) {
-                if(drop) {
+                if(drop || !exists) {
                     info("created db and connected successfully"); 
                 } else 
                     info("connected successfully"); 
             } else {
                 errFatal("failed to connect to db");
             }
-            if(exists && drop) {
+            if(drop || !exists) {
                 //create tables
                 if(create_stats_table()) {
                     info("sucessfully created stats table");
@@ -407,15 +358,14 @@ struct sqliteSync:public Callback
                 //if(create_tx_table() && verbose) {
                 //    info("successfully created/did not delete tx table");
                 //}
-            }/*
-            if(exists) {
-                database_block_count = get_block_count();
-                info("found %lld existing blocks",database_block_count);
-            } else {
-                database_block_count = 0;
             }
-            */
-            database_block_count = 0; //remove me later
+            if(exists && !drop) {
+                // database_last_block is set in the sqlite callback
+                get_block_count();
+                info("found %lld existing blocks",database_last_block+1);
+            } else {
+                database_last_block = -1;
+            }
 
             printf("\n");
             info("starting block insert process");
@@ -470,14 +420,12 @@ struct sqliteSync:public Callback
         blockFee = 0;
         block_sent = 0;
         block_received = 0;
-        //currblock will be 1 less then block_count but < works out
-        /*if((int)currBlock < database_block_count || block_exists()) {
+        //currblock should be equal to last_block to skip it
+        if((int)currBlock <= database_last_block) {
             skip = true;
             block_existing++;
         } else 
             skip = false;
-        */
-        skip = false; //remove me later when we implement syncing
     }
 
     virtual void startTX(
