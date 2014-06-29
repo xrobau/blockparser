@@ -286,12 +286,21 @@ struct sqliteSync:public Callback
     virtual void add_block() {
 
        std::string POS = proofOfStake ? "TRUE" : "FALSE";
-       uint8_t *strprevBlkHash = allocHash256(); 
-       uint8_t *strblkMerkleRoot = allocHash256();
-       uint8_t *strblockHash = allocHash256();
-       toHex(strprevBlkHash,prevBlkHash);
-       toHex(strblkMerkleRoot,blkMerkleRoot);
+       uint8_t *strblockHash = (uint8_t*)alloca(2*kSHA256ByteSize+1);
+       //uint8_t *strblockHash = allocHash256();
+       uint8_t *strblkMerkleRoot = (uint8_t*)alloca(2*kSHA256ByteSize+1);
+       //uint8_t *strblkMerkleRoot = allocHash256();
+       uint8_t *strprevBlkHash = (uint8_t*)alloca(2*kSHA256ByteSize+1); 
+       //uint8_t *strprevBlkHash = allocHash256(); 
+       //showHex(blockHash);
+       //printf("\n");
+       //showHex(prevBlkHash);
+       //printf("\n");
+       //showHex(blkMerkleRoot);
+       //printf("\n");
        toHex(strblockHash, blockHash);
+       toHex(strblkMerkleRoot,blkMerkleRoot);
+       toHex(strprevBlkHash,prevBlkHash);
        uint64_t msTime = time*1000;
        std::string query = str(boost::format(
        "INSERT INTO blocks (id,chain,stakeage,pos,hash,hashprevblock,hashmerkleroot,time,bits,diff,nonce,txcount,reward,staked,sent,received,destroyed) "
