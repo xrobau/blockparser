@@ -39,6 +39,8 @@ struct sqliteSync:public Callback
     uint64_t currBlock;
     uint64_t blockFee;
     uint32_t bits;
+    uint32_t last_pow_bits;
+    uint32_t last_pos_bits;
     uint32_t nonce;
     uint32_t txTime;
     const uint8_t *prevBlkHash;
@@ -187,10 +189,10 @@ struct sqliteSync:public Callback
        uint64_t msTime = time*1000;
        std::string query = str(boost::format("INSERT INTO stats (time, last_block, destroyed_fees,"
         " minted_coins, mined_coins,"
-        " money_supply, pos_blocks, pow_blocks, transactions) VALUES "
-        "(%d,%d,%d,%d,%d,%d,%d,%d,%d)") % msTime % (int)currBlock % 
+        " money_supply, pos_blocks, pow_blocks, transactions, pos_difficulty, pow_difficulty) VALUES "
+        "(%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)") % msTime % (int)currBlock % 
         totalFeeDestroyed % totalStakeEarned % totalMined % totalSupply % 
-        POScount % POWcount % totalTrans); 
+        POScount % POWcount % totalTrans % diff(last_pos_bits) % diff(last_pow_bits)); 
         //totalSent % totalReceived % totalTrans);
        if(verbose) printf("%s\n",query.c_str());
        call_query(query);
@@ -208,6 +210,8 @@ struct sqliteSync:public Callback
         " destroyed_fees bigint,"
         " minted_coins bigint,"
         " mined_coins bigint,"
+        " pos_difficulty float,"
+        " pow_difficulty float,"
         " PRIMARY KEY (last_block))"
         //" sent bigint,"
         //" received bigint,"
@@ -226,7 +230,7 @@ struct sqliteSync:public Callback
             "hashMerkleRoot varchar,"
             "time timestamp,"
             "bits varchar,"
-            "diff float,"
+            "difficulty float,"
             "nonce bigint,"
             "txcount int,"
             "reward bigint,"
@@ -303,7 +307,7 @@ struct sqliteSync:public Callback
        toHex(strprevBlkHash,prevBlkHash);
        uint64_t msTime = time*1000;
        std::string query = str(boost::format(
-       "INSERT INTO blocks (id,chain,stakeage,pos,hash,hashprevblock,hashmerkleroot,time,bits,diff,nonce,txcount,reward,staked,sent,received,destroyed) "
+       "INSERT INTO blocks (id,chain,stakeage,pos,hash,hashprevblock,hashmerkleroot,time,bits,difficulty,nonce,txcount,reward,staked,sent,received,destroyed) "
        "VALUES (%d,0,%f,'%s','%s','%s','%s',%d,'%x',%f,%u,%d,%d,%d,%d,%d,%d)") % (int)currBlock % stakeAge % POS % strblockHash % strprevBlkHash % strblkMerkleRoot % msTime % bits %
             diff(bits) % nonce % blkTxCount % baseReward % inputValue % block_sent % block_received % blockFee);
        if(verbose) {
@@ -319,6 +323,8 @@ struct sqliteSync:public Callback
     {
         block_inserts = 0;
         block_existing = 0;
+        last_pow_bits = 0x1c00ffff; //peercoin started at diff 256
+        last_pos_bits = 0x1d00ffff; //unsure of inital POS diff - guessing 1
 
         optparse::Values values = parser.parse_args(argc, argv);
         path = values["path"].c_str();
@@ -536,7 +542,9 @@ struct sqliteSync:public Callback
            blkTxCount -= 2;
            txCount -= 2;
            totalTrans += txCount;
+           last_pos_bits = bits;
         } else {
+            last_pow_bits = bits;
             POWcount++;
             totalMined += baseReward;
             blkTxCount -= 1;
