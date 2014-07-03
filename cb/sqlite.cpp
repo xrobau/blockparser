@@ -32,6 +32,7 @@ struct sqliteSync:public Callback
     bool drop;
     uint64_t inputValue;
     uint64_t baseReward;
+    uint64_t last_pow_reward;
     uint8_t txCount;
     int blkTxCount;
     size_t nbInputs;
@@ -189,10 +190,10 @@ struct sqliteSync:public Callback
        uint64_t msTime = time*1000;
        std::string query = str(boost::format("INSERT INTO stats (time, last_block, destroyed_fees,"
         " minted_coins, mined_coins,"
-        " money_supply, pos_blocks, pow_blocks, transactions, pos_difficulty, pow_difficulty) VALUES "
-        "(%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)") % msTime % (int)currBlock % 
+        " money_supply, pos_blocks, pow_blocks, transactions, pow_block_reward, pos_difficulty, pow_difficulty) VALUES "
+        "(%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)") % msTime % (int)currBlock % 
         totalFeeDestroyed % totalStakeEarned % totalMined % totalSupply % 
-        POScount % POWcount % totalTrans % diff(last_pos_bits) % diff(last_pow_bits)); 
+        POScount % POWcount % totalTrans % last_pow_reward % diff(last_pos_bits) % diff(last_pow_bits)); 
         //totalSent % totalReceived % totalTrans);
        if(verbose) printf("%s\n",query.c_str());
        call_query(query);
@@ -210,6 +211,7 @@ struct sqliteSync:public Callback
         " destroyed_fees bigint,"
         " minted_coins bigint,"
         " mined_coins bigint,"
+        " pow_block_reward bigint,"
         " pos_difficulty float,"
         " pow_difficulty float,"
         " PRIMARY KEY (last_block))"
@@ -325,6 +327,7 @@ struct sqliteSync:public Callback
         block_existing = 0;
         last_pow_bits = 0x1c00ffff; //peercoin started at diff 256
         last_pos_bits = 0x1d00ffff; //unsure of inital POS diff - guessing 1
+        last_pow_reward = 0;
 
         optparse::Values values = parser.parse_args(argc, argv);
         path = values["path"].c_str();
@@ -545,6 +548,7 @@ struct sqliteSync:public Callback
            last_pos_bits = bits;
         } else {
             last_pow_bits = bits;
+            last_pow_reward = baseReward;
             POWcount++;
             totalMined += baseReward;
             blkTxCount -= 1;
