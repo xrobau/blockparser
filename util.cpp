@@ -446,13 +446,7 @@ bool addrToHash160(
 
         uint8_t data[1+kRIPEMD160ByteSize];
         memcpy(1+data, hash160, kRIPEMD160ByteSize);
-        #if defined(PEERCOIN)
-            data[0] = 55;
-        #elif defined(LITECOIN)
-            data[0] = 48;
-        #else
-            data[0] = 0;
-        #endif
+        data[0] = 125;
 
         uint8_t sha[kSHA256ByteSize];
         sha256Twice(sha, data, 1+kRIPEMD160ByteSize);

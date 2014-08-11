@@ -366,15 +366,7 @@ static void initCallback(
 
 static void mapBlockChainFiles()
 {
-    std::string coinName(
-        #if defined PEERCOIN
-            "/.ppcoin/"
-        #elif defined LITECOIN
-            "/.litecoin/"
-        #else
-            "/.bitcoin/"
-        #endif
-    );
+    std::string coinName( "/.SonicScrewdriver/");
 
     const char *home = getenv("HOME");
     if(0==home) {
@@ -515,30 +507,23 @@ static bool buildBlock(
     const uint8_t *e
 )
 {
-    static const uint32_t expected =
-    #if defined(PEERCOIN)
-        0xe5e9e8e6
-    #elif defined(LITECOIN)
-        0xdbb6c0fb
-    #else
-        0xd9b4bef9
-    #endif
-    ;
+    static const uint32_t expected = 0x05223570;
+
 
     if(unlikely(e<=(8+p))) {
-        //printf("end of map, reason : pointer past EOF\n");
+        printf("end of map, reason : pointer past EOF\n");
         return true;
     }
 
     LOAD(uint32_t, magic, p);
     if(unlikely(expected!=magic)) {
-        //printf("end of map, reason : magic is fucked %d away from EOF\n", (int)(e-p));
+        printf("end of map, reason : magic is fucked %d away from EOF got %#010x\n", (int)(e-p), magic);
         return true;
     }
 
     LOAD(uint32_t, size, p);
     if(unlikely(e<(p+size))) {
-        //printf("end of map, reason : end of block past EOF, %d past EOF\n", (int)((p+size)-e));
+        printf("end of map, reason : end of block past EOF, %d past EOF\n", (int)((p+size)-e));
         return true;
     }
 

@@ -259,13 +259,7 @@
     void hash160ToAddr(
               uint8_t *addr,
         const uint8_t *hash160,
-        #if defined(PEERCOIN)
-              uint8_t type = 55
-        #elif defined(LITECOIN)
-              uint8_t type = 48
-        #else
-              uint8_t type = 0
-        #endif
+              uint8_t type = 125
     );
 
     bool addrToHash160(

@@ -47,7 +47,7 @@ LIBS =                          \
 	-lssl						\
     -ldl                        \
 	-lboost_system				\
-	-lboost_thread				\
+	-lboost_thread-mt				\
 	-lsqlite3						\
 
 all:parser
